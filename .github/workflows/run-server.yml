@@ -1,0 +1,65 @@
+name: Run CRMP Server with MySQL
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run-server:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: crmp
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Wine (для запуска Windows .exe на Linux)
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine32 wine64
+
+      - name: Import database.sql
+        run: |
+          mysql -h 127.0.0.1 -u root -proot crmp < bay-dzhoker/database.sql
+          mysql -h 127.0.0.1 -u root -proot crmp -e "SHOW TABLES;"
+
+      - name: Configure server.cfg
+        run: |
+          cd bay-dzhoker
+          # Меняем настройки для подключения к MySQL
+          sed -i 's/mysql_host=.*/mysql_host=127.0.0.1/' server.cfg
+          sed -i 's/mysql_user=.*/mysql_user=root/' server.cfg
+          sed -i 's/mysql_password=.*/mysql_password=root/' server.cfg
+          sed -i 's/mysql_database=.*/mysql_database=crmp/' server.cfg
+
+      - name: Start server
+        run: |
+          cd bay-dzhoker
+          # Запускаем сервер через Wine
+          wine server/samp-server.exe &
+          sleep 30
+          echo "Server started!"
+
+      - name: Test server response
+        run: |
+          sleep 10
+          echo "Checking if server is running..."
+          ps aux | grep -i samp
+
+      - name: Keep server running
+        run: |
+          echo "Server is running on GitHub Actions"
+          echo "Available for testing until workflow finishes"
+          # Держим сервер активным 60 минут максимум
+          sleep 3600
